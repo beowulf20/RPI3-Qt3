@@ -7,7 +7,7 @@ import os
 
 QT_VERSION = "5.15"
 QT_SRC_EXPANDED_FOLDER_NAME = "qt5"
-RPI_VERSION = "linux-rasp-pi3-g++"
+RPI_VERSION = "linux-rasp-pi3-brcm-g++"
 RPI_TOOLS_URL = "https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/arm-linux-gnueabihf/gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf.tar.xz"
 RPI_TOOLS_EXPANDED_FOLDER_NAME = "gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabihf"
 RPI_SSH_HOSTNAME = "192.168.1.41"
@@ -15,12 +15,16 @@ RPI_SSH_USERNAME = "pi"
 RPI_SSH_COMMAND = 'ssh {1} -l {0} -o BatchMode=yes $@'.format(
     RPI_SSH_USERNAME, RPI_SSH_HOSTNAME).split(' ')
 RPI_BASE_FOLDER = '/home/pi/qt{0}pi'.format(QT_VERSION)
+RPI_TARGET_FOLDER = "/usr/local/qt{0}".format(QT_VERSION)
 
 LOCAL_BASE_PATH = "{}/tmp/{}".format(os.getcwd(), RPI_VERSION)
 
 SYSROOT_FIX_SCRIPT_URL = "https://raw.githubusercontent.com/riscv/riscv-poky/master/scripts/sysroot-relativelinks.py"
 
 MAKE_N_CORES = 8
+
+RPI_INSTALL_PACKAGES = 'libfontconfig1-dev libdbus-1-dev libnss3-dev libxkbcommon-dev libjpeg-dev libasound2-dev libudev-dev libgles2-mesa-dev'
+HOST_INSTALL_PACKAGES = 'install g++-multilib python pkg-config gperf bison flex libnss3-dev'
 
 
 def fetch_file(url, filename):
@@ -49,12 +53,14 @@ def fetch_qt_sources():
     subprocess.run('git checkout {0}'.format(
         QT_VERSION).split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
     subprocess.run(
-        './init-repository --module-subset=essential'.split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
+        './init-repository --module-subset=essential,qtquickcontrols2,qtconnectivity -f'.split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
 
 
 def update_mkspecs():
     print("Updating mkspecs errors")
-    subprocess.run('cp -f {0}/rpi3-g++-qmake.conf linux-rasp-pi3-g++/qmake.conf'.format(os.getcwd()).split(
+    subprocess.run('cp -r linux-rasp-pi3-g++ linux-rasp-pi3-brcm-g++/'.format(os.getcwd()).split(
+        ' '), cwd="{0}/qt5/qtbase/mkspecs/devices".format(LOCAL_BASE_PATH))
+    subprocess.run('cp -f {0}/rpi3-g++-qmake.conf linux-rasp-pi3-brcm-g++/qmake.conf'.format(os.getcwd()).split(
         ' '), cwd="{0}/qt5/qtbase/mkspecs/devices".format(LOCAL_BASE_PATH))
 
 
@@ -139,7 +145,7 @@ def qt_configure():
 		-device {1} \
 		-device-option CROSS_COMPILE={2}/tools/{3}/bin/arm-linux-gnueabihf- \
 		-sysroot {2}/sysroot \
-		-prefix /usr/local/qt{4} \
+		-prefix {5} \
 		-extprefix {2}/qt{4}-target-binaries \
         -hostprefix {2}/qt{4}-host-binaries \
 		-opensource \
@@ -156,7 +162,8 @@ def qt_configure():
                    RPI_VERSION,
                    LOCAL_BASE_PATH,
                    RPI_TOOLS_EXPANDED_FOLDER_NAME,
-                   QT_VERSION
+                   QT_VERSION,
+                   RPI_TARGET_FOLDER,
                    ).replace('\t', '').replace('\n', '').split(' ')
     d = subprocess.run(cwd='{}/build'.format(LOCAL_BASE_PATH), args=args)
     if d.returncode != 0:
@@ -196,12 +203,16 @@ def rsync_pi_target_binaries():
         RPI_SSH_USERNAME,
         RPI_SSH_HOSTNAME
     ))
+
+    ssh_execute_command('sudo chown 1000:1000 {0}'.format(RPI_TARGET_FOLDER))
     subprocess.run(
-        'rsync -azq {2}/qt{3}-target-binaries {0}@{1}:/usr/local/qt5pi/'.format(
+        'rsync -azq {2}/qt{3}-target-binaries {0}@{1}:{4}'.format(
             RPI_SSH_USERNAME,
             RPI_SSH_HOSTNAME,
             LOCAL_BASE_PATH,
-            QT_VERSION).split(' '))
+            QT_VERSION,
+            RPI_TARGET_FOLDER
+        ).split(' ')).check_returncode()
 
 
 if __name__ == "__main__":
@@ -239,5 +250,5 @@ if __name__ == "__main__":
     qt_install()
     rsync_pi_target_binaries()
 
-    print('Hopefully everything is finished and well configured! Enjoy :)')
+    print('\n\nHopefully everything is finished and well configured! Enjoy :)\n\tMaster Beowulf\n\n')
     os._exit(0)
