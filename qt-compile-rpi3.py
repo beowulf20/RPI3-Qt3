@@ -1,4 +1,3 @@
-import git
 import subprocess
 from threading import Thread
 import tarfile
@@ -15,13 +14,15 @@ RPI_SSH_USERNAME = "pi"
 RPI_SSH_COMMAND = 'ssh {1} -l {0} -o BatchMode=yes $@'.format(
     RPI_SSH_USERNAME, RPI_SSH_HOSTNAME).split(' ')
 RPI_BASE_FOLDER = '/home/pi/qt{0}pi'.format(QT_VERSION)
-RPI_TARGET_FOLDER = "/usr/local/qt{0}".format(QT_VERSION)
+# RPI_TARGET_FOLDER = "/usr/local/qt{0}".format(QT_VERSION)
 
 LOCAL_BASE_PATH = "{}/tmp/{}".format(os.getcwd(), RPI_VERSION)
 
 SYSROOT_FIX_SCRIPT_URL = "https://raw.githubusercontent.com/riscv/riscv-poky/master/scripts/sysroot-relativelinks.py"
 
 MAKE_N_CORES = 8
+
+OPENSSL_INCLUDE_PATH= "/home/master/openssl-1.1.1g-src/include"
 
 RPI_INSTALL_PACKAGES = 'libfontconfig1-dev libdbus-1-dev libnss3-dev libxkbcommon-dev libjpeg-dev libasound2-dev libudev-dev libgles2-mesa-dev'
 HOST_INSTALL_PACKAGES = 'install g++-multilib python pkg-config gperf bison flex libnss3-dev'
@@ -40,6 +41,8 @@ def fetch_tar(url, path, tempName):
                     "-C", path,  "--skip-old-files"])
 
 
+
+
 def fetch_rpi_toolchain():
     path = "{}/tools".format(LOCAL_BASE_PATH)
     fetch_tar(RPI_TOOLS_URL, path, 'rpitools.tar.xz')
@@ -53,12 +56,12 @@ def fetch_qt_sources():
     subprocess.run('git checkout {0}'.format(
         QT_VERSION).split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
     subprocess.run(
-        './init-repository --module-subset=essential,qtquickcontrols2,qtconnectivity -f'.split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
+        './init-repository --module-subset=essential,qtconnectivity,qtcharts,qtquicktimeline,qtcharts,qtmultimedia,qtsvg,qtapplicationmanager -f'.split(' '), cwd=LOCAL_BASE_PATH+'/qt5')
 
 
 def update_mkspecs():
     print("Updating mkspecs errors")
-    subprocess.run('cp -r linux-rasp-pi3-g++ linux-rasp-pi3-brcm-g++/'.format(os.getcwd()).split(
+    subprocess.run('cp -r linux-rasp-pi3-g++ linux-rasp-pi3-brcm-g++/'.split(
         ' '), cwd="{0}/qt5/qtbase/mkspecs/devices".format(LOCAL_BASE_PATH))
     subprocess.run('cp -f {0}/rpi3-g++-qmake.conf linux-rasp-pi3-brcm-g++/qmake.conf'.format(os.getcwd()).split(
         ' '), cwd="{0}/qt5/qtbase/mkspecs/devices".format(LOCAL_BASE_PATH))
@@ -139,7 +142,7 @@ def fix_pkg_filenames():
 
 
 def qt_configure():
-    args = "../{0}/configure -release \
+    args = '../{0}/configure -release \
 		-opengl es2 \
         -eglfs \
 		-device {1} \
@@ -150,20 +153,21 @@ def qt_configure():
         -hostprefix {2}/qt{4}-host-binaries \
 		-opensource \
 		-confirm-license \
-		-skip qtscript \
-		-skip qtwayland \
-		-skip qtwebengine \
 		-nomake tests \
 		-make libs \
 		-pkg-config \
+        -skip qtwayland \
+        -skip qtwebengine\
+        -openssl-linked -I {6} \
 		-no-use-gold-linker \
 		-v \
-		-recheck".format(QT_SRC_EXPANDED_FOLDER_NAME,
+		-recheck'.format(QT_SRC_EXPANDED_FOLDER_NAME,
                    RPI_VERSION,
                    LOCAL_BASE_PATH,
                    RPI_TOOLS_EXPANDED_FOLDER_NAME,
                    QT_VERSION,
-                   RPI_TARGET_FOLDER,
+                   RPI_BASE_FOLDER,
+                   OPENSSL_INCLUDE_PATH,
                    ).replace('\t', '').replace('\n', '').split(' ')
     d = subprocess.run(cwd='{}/build'.format(LOCAL_BASE_PATH), args=args)
     if d.returncode != 0:
@@ -204,14 +208,15 @@ def rsync_pi_target_binaries():
         RPI_SSH_HOSTNAME
     ))
 
-    ssh_execute_command('sudo chown 1000:1000 {0}'.format(RPI_TARGET_FOLDER))
+    ssh_execute_command('sudo mkdir {0} -p'.format(RPI_BASE_FOLDER))
+    ssh_execute_command('sudo chown 1000:1000 {0}'.format(RPI_BASE_FOLDER))
     subprocess.run(
-        'rsync -azq {2}/qt{3}-target-binaries {0}@{1}:{4}'.format(
+        'rsync -azq {2}/qt{3}-target-binaries/ {0}@{1}:{4}'.format(
             RPI_SSH_USERNAME,
             RPI_SSH_HOSTNAME,
             LOCAL_BASE_PATH,
             QT_VERSION,
-            RPI_TARGET_FOLDER
+            RPI_BASE_FOLDER
         ).split(' ')).check_returncode()
 
 
